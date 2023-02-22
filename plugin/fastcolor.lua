@@ -1,9 +1,11 @@
 -- local root = debug.getinfo(1).source:sub(2, -21)
-local root = vim.fn.stdpath("cache") .. "/colorcache/"
+local root = vim.fn.stdpath("cache") .. "/colorcache"
+vim.opt.rtp:prepend(root)
+root = root .. "/colors/"
 if vim.fn.isdirectory(root) == 0 then
 	vim.fn.mkdir(root)
 end
-P(debug.getinfo(1).source:sub(2, -21))
+-- P(debug.getinfo(1).source:sub(2, -21))
 
 local hl = vim.api.nvim_set_hl
 local cnt = 0
@@ -24,12 +26,27 @@ local path
 vim.api.nvim_create_autocmd("ColorSchemePre", {
 	callback = function(O)
 		name = O.match
-		path = root .. name .. ".vim"
+		path = root .. name
+		local file = io.open(path .. ".vim", "wb")
+		if file then
+			file:write([[require("fastcolor").load()]])
+			file:close()
+		end
 		vim.api.nvim_set_hl = function(id, group, opts)
 			if cache[name] == nil then
-				cache[name] = {}
+				cache[name] = {
+					string.format(
+						[[
+return string.dump(function()
+if vim.g.colors_name then vim.cmd("hi clear") end
+vim.o.termguicolors = true
+vim.g.colors_name = "%s"
+vim.o.background = "dark"]],
+						name
+					),
+				}
 			end
-			table.insert(cache[name], string.format("vim.api.nvim_set_hl(%s, %s, %s)", id, group, inspect(opts)))
+			table.insert(cache[name], string.format([[vim.api.nvim_set_hl(%s, "%s", %s)]], id, group, inspect(opts)))
 			hl(id, group, opts)
 			cnt = cnt + 1
 		end
@@ -39,11 +56,20 @@ vim.api.nvim_create_autocmd("ColorSchemePre", {
 vim.api.nvim_create_autocmd("ColorScheme", {
 	callback = function()
 		vim.api.nvim_set_hl = hl
-		P(cache[name])
 		print(path)
+		table.insert(cache[name], "end)")
+
 		local file = io.open(path, "wb")
+
+		if vim.g.fastcolor_debug then -- Debugging purpose
+			local deb = io.open(path .. ".lua", "wb")
+			deb:write(table.concat(cache[name], "\n"))
+			deb:close()
+		end
+
 		if file then
-			file:write(table.concat(cache[name], "\n"))
+			local f = loadstring(table.concat(cache[name], "\n"), "=")
+			file:write(f(), "\n")
 			file:close()
 		end
 		cache[name] = {}
